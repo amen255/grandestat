@@ -41,6 +41,24 @@ h1, h2, h3 { font-weight: 700; }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ---------------- Login screen ---------------- */
+#login-screen {
+  position: fixed; inset: 0; z-index: 500;
+  background: linear-gradient(135deg, var(--sidebar-1), var(--sidebar-2));
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.login-card {
+  background: #fff; border-radius: 16px; padding: 34px 30px; width: 380px; max-width: 100%;
+  box-shadow: 0 24px 70px rgba(0,0,0,.35); text-align: center; animation: pop .2s;
+}
+.login-card .login-logo { font-size: 46px; margin-bottom: 6px; }
+.login-card h2 { margin: 0 0 22px; font-size: 20px; color: var(--sidebar-1); }
+.login-field { text-align: right; margin-bottom: 14px; }
+.login-field label { display: block; font-size: 13px; color: var(--muted); font-weight: 600; margin-bottom: 6px; }
+.login-field .input { width: 100%; padding: 11px 13px; }
+.login-err { color: var(--danger); font-size: 13px; min-height: 18px; margin-bottom: 6px; font-weight: 600; }
+.login-card #lg-btn { width: 100%; justify-content: center; padding: 12px; font-size: 15px; }
+
 /* ---------------- Layout ---------------- */
 .app { display: grid; grid-template-columns: 264px 1fr; min-height: 100vh; }
 

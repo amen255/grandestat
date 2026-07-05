@@ -1480,24 +1480,78 @@ function openBackup() {
   };
 }
 
-async function boot() {
-  const overlay = $("#boot-overlay");
-  try {
-    await initDB();
-  } catch (e) {
-    if (overlay) overlay.innerHTML = `<div style="color:#e74c3c;text-align:center">
-      ⚠️ ${CURRENT_LANG === "ar" ? "تعذّر الاتصال بالخادم" : "پەیوەندی بە سێرڤەرەوە نەکرا"}<br><br>
-      <code>python server.py</code><br><small>${esc(e.message)}</small></div>`;
-    return;
-  }
+// Start the app after a successful login (loads DB, wires the UI).
+async function startApp() {
+  await initDB();
   $$(".lang-switch button").forEach((b) => {
     b.onclick = () => { setLang(b.dataset.lang); applyLangUI(); navigate(CURRENT_ROUTE); };
   });
   $("#btn-settings").onclick = openSettings;
   $("#btn-backup").onclick = openBackup;
+  $("#btn-account").onclick = openAccount;
+  $("#btn-logout").onclick = doLogout;
   applyLangUI();
   navigate("dashboard");
-  if (overlay) overlay.remove();
+  const bo = $("#boot-overlay"); if (bo) bo.remove();
+  const lg = $("#login-screen"); if (lg) lg.remove();
+  const app = $(".app"); if (app) app.style.display = "";
+}
+
+// Full-screen login gate.
+function showLogin() {
+  const app = $(".app"); if (app) app.style.display = "none";
+  const bo = $("#boot-overlay"); if (bo) bo.remove();
+  if ($("#login-screen")) return;
+  const scr = el(`
+    <div id="login-screen">
+      <form class="login-card" id="login-form" autocomplete="on">
+        <div class="login-logo">🏘️</div>
+        <h2>${esc(t("app_title"))}</h2>
+        <div class="login-field"><label>${t("login_user")}</label><input id="lg-user" class="input" autocomplete="username" value="${esc(auth.username() || "admin")}"></div>
+        <div class="login-field"><label>${t("login_pass")}</label><input id="lg-pass" type="password" class="input" autocomplete="current-password"></div>
+        <div class="login-err" id="lg-err"></div>
+        <button class="btn btn-primary" type="submit" id="lg-btn">${t("login_btn")}</button>
+      </form>
+    </div>`);
+  document.body.appendChild(scr);
+  const inp = $("#lg-pass", scr); if (inp) inp.focus();
+  $("#login-form", scr).onsubmit = async (e) => {
+    e.preventDefault();
+    const btn = $("#lg-btn", scr); btn.disabled = true; $("#lg-err", scr).textContent = "";
+    try {
+      await auth.login($("#lg-user", scr).value.trim(), $("#lg-pass", scr).value);
+      scr.remove();
+      await startApp();
+    } catch (err) {
+      btn.disabled = false;
+      $("#lg-err", scr).textContent = t("login_fail");
+      const p = $("#lg-pass", scr); p.value = ""; p.focus();
+    }
+  };
+}
+
+// Called by db.js when any API call returns 401 (token expired).
+function onAuthFail() { showLogin(); }
+
+function doLogout() { auth.logout().then(() => location.reload()); }
+
+// Change username / password.
+function openAccount() {
+  openForm({
+    title: "🔒 " + t("login_account"),
+    fields: [
+      { name: "username", label: t("login_user"), default: auth.username() },
+      { name: "password", label: t("login_new_pass"), type: "password" },
+    ],
+    onSave: async (out) => { await auth.change(out.username, out.password); },
+  }, {});
+}
+
+async function boot() {
+  if (auth.isLoggedIn()) {
+    try { await startApp(); return; } catch (e) { /* invalid token → show login */ }
+  }
+  showLogin();
 }
 
 document.addEventListener("DOMContentLoaded", boot);

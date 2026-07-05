@@ -13,15 +13,49 @@ let SETTINGS = {
   office_name: "", office_phone: "", office_address: "", default_currency: "IQD",
 };
 
+let AUTH_TOKEN = sessionStorage.getItem("res_token") || "";
+let AUTH_USER = sessionStorage.getItem("res_user") || "";
+
 async function apiJSON(method, path, body) {
+  const headers = {};
+  if (body) headers["Content-Type"] = "application/json";
+  if (AUTH_TOKEN) headers["X-Auth-Token"] = AUTH_TOKEN;
   const res = await fetch(path, {
     method,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
+    headers: Object.keys(headers).length ? headers : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
+  if (res.status === 401 && !path.includes("/api/auth/")) {
+    // token expired or missing → force re-login
+    AUTH_TOKEN = ""; sessionStorage.removeItem("res_token");
+    if (typeof onAuthFail === "function") onAuthFail();
+    throw new Error("unauthorized");
+  }
   if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
   return res.status === 204 ? null : res.json();
 }
+
+const auth = {
+  isLoggedIn() { return !!AUTH_TOKEN; },
+  username() { return AUTH_USER; },
+  async login(username, password) {
+    const res = await apiJSON("POST", "/api/auth/login", { username, password });
+    AUTH_TOKEN = res.token; AUTH_USER = res.username;
+    sessionStorage.setItem("res_token", AUTH_TOKEN);
+    sessionStorage.setItem("res_user", AUTH_USER);
+    return res;
+  },
+  async change(username, password) {
+    const res = await apiJSON("POST", "/api/auth/change", { username, password });
+    if (res.username) { AUTH_USER = res.username; sessionStorage.setItem("res_user", AUTH_USER); }
+    return res;
+  },
+  async logout() {
+    try { await apiJSON("POST", "/api/auth/logout", {}); } catch (e) { /* ignore */ }
+    AUTH_TOKEN = ""; AUTH_USER = "";
+    sessionStorage.removeItem("res_token"); sessionStorage.removeItem("res_user");
+  },
+};
 
 // Load full state from the database into the cache (called once at boot).
 async function initDB() {
