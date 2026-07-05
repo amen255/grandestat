@@ -1126,17 +1126,9 @@ function amountPhrase(n, cur) {
   const v = Number(n) || 0;
   return `${sym}${v.toLocaleString("en-US")} (${numberToWordsEn(v)} (${sym}))`;
 }
-const PTYPE_EN = { house: "House", apartment: "Apartment", land: "Land", shop: "Shop", villa: "Villa", office: "Office", building: "Building", farm: "Farm" };
 
-// amount phrase using the word "US dollar" (rent template style): "$500 (five hundred (US dollar))"
-function curWord(cur) { return cur === "USD" ? "US dollar" : (cur === "IQD" ? "Iraqi dinar" : (cur || "")); }
-function amountPhraseW(n, cur) {
-  const v = Number(n) || 0;
-  return `${curSymbol(cur)}${v.toLocaleString("en-US")} (${numberToWordsEn(v)} (${curWord(cur)}))`;
-}
-
-// GRAND VIEW letterhead (fan logo + bilingual name + footer). Values come from
-// Settings where available, else GRAND VIEW defaults.
+// Letterhead (fan logo + optional bilingual name + footer). All values come from
+// ⚙️ Settings; blank by default so no company name is hardcoded on printouts.
 function fanLogoSVG() {
   const cx = 50, cy = 92, rays = 9, spread = 150;
   let p = "";
@@ -1153,32 +1145,39 @@ function fanLogoSVG() {
   return `<svg viewBox="0 0 100 100" width="58" height="58"><g fill="#c2a24c">${p}</g></svg>`;
 }
 // Branding helpers — all read from Settings, falling back to GRAND VIEW defaults.
+// Branding — all values come from ⚙️ Settings; blank by default (no hardcoded
+// company name on printouts). The user fills in their own office details.
 const BRAND = {
-  ar: () => store.settings().brand_ar || "عقارات گراند ڤیو",
-  en: () => store.settings().office_name || "GRAND VIEW RealEstate",
-  tagAr: () => store.settings().tagline_ar || "لشراء وبيع المنازل و الأراضي",
-  tagKu: () => store.settings().tagline_ku || "بۆ کڕین و فرۆشتنی خانو و زەوی",
-  logoTop: () => store.settings().logo_top || "GRAND VIEW",
-  logoBottom: () => store.settings().logo_bottom || "ESTATE",
-  phone: () => store.settings().office_phone || "0750 891 9134",
-  location: () => store.settings().office_address || "هەولێر – برایەتی",
-  court: () => store.settings().court_city || "Erbil",
+  ar: () => store.settings().brand_ar || "",
+  en: () => store.settings().office_name || "",
+  tagAr: () => store.settings().tagline_ar || "",
+  tagKu: () => store.settings().tagline_ku || "",
+  logoTop: () => store.settings().logo_top || "",
+  logoBottom: () => store.settings().logo_bottom || "",
+  phone: () => store.settings().office_phone || "",
+  location: () => store.settings().office_address || "",
+  court: () => store.settings().court_city || "",
   logo: () => store.settings().logo_image || "",
 };
 function contractLetterhead() {
+  const name = BRAND.ar() || BRAND.en();
+  const lt = BRAND.logoTop(), lb = BRAND.logoBottom();
   const logoBlock = BRAND.logo()
     ? `<img src="${esc(BRAND.logo())}" class="lh-img" alt="">`
-    : `${fanLogoSVG()}<div class="lh-logo-txt">${esc(BRAND.logoTop())}<span>${esc(BRAND.logoBottom())}</span></div>`;
+    : `${fanLogoSVG()}${(lt || lb) ? `<div class="lh-logo-txt">${esc(lt)}<span>${esc(lb)}</span></div>` : ""}`;
+  const side = (tag) => `<div class="lh-side">${name ? `<div class="lh-name">${esc(name)}</div>` : ""}${tag ? `<div class="lh-tag">${esc(tag)}</div>` : ""}</div>`;
   return `
     <div class="lh">
-      <div class="lh-side"><div class="lh-name">${esc(BRAND.ar())}</div><div class="lh-tag">${esc(BRAND.tagAr())}</div></div>
+      ${side(BRAND.tagAr())}
       <div class="lh-logo">${logoBlock}</div>
-      <div class="lh-side"><div class="lh-name">${esc(BRAND.ar())}</div><div class="lh-tag">${esc(BRAND.tagKu())}</div></div>
+      ${side(BRAND.tagKu())}
     </div>
     <div class="lh-rule"></div>`;
 }
 function contractFooter() {
-  return `<div class="lh-rule bottom"></div><div class="lh-foot"><span>📞 ${esc(BRAND.phone())}</span><span>📍 ${esc(BRAND.location())}</span></div>`;
+  const phone = BRAND.phone(), loc = BRAND.location();
+  if (!phone && !loc) return `<div class="lh-rule bottom"></div>`;
+  return `<div class="lh-rule bottom"></div><div class="lh-foot"><span>${phone ? "📞 " + esc(phone) : ""}</span><span>${loc ? "📍 " + esc(loc) : ""}</span></div>`;
 }
 
 // Optional property photos block for printed contracts (only if photos attached).
@@ -1188,185 +1187,55 @@ function contractPhotosHtml(c) {
   return `<div class="print-photos">${photos.slice(0, 6).map((p) => `<img src="${esc(p)}" alt="">`).join("")}</div>`;
 }
 
-// Sale contract — matches the user's GRAND VIEW "BUY AND SALE CONTRACT" template.
-function printContractSaleEN(c) {
-  const s = store.settings();
-  const office = BRAND.en();
-  const city = BRAND.court();
-  const amt = (n) => amountPhrase(n, c.currency);
-  const num = String(c.code || "").replace(/\D/g, "").replace(/^0+/, "") || String(c.code || "");
-  const dateTop = String(c.createdAt || "").slice(0, 10) || today();
-  const ptypeEN = PTYPE_EN[c.ptype] || (c.ptype || "");
-  const clauses = [
-    `I am the first side (${esc(c.firstParty || "")}) the owner of the property agreed to sell the above mentioned property for an amount of ${amt(c.price)}.`,
-    `I am the second side (${esc(c.secondParty || "")}) accepted to purchase the above mentioned property for an amount of ${amt(c.price)}.`,
-    `The Second side shall pay an amount of ${amt(c.moneyAdvance)} to the first side as an advance, and The remaining amount (${amt(c.moneyLeft)}) must be pay on the date (${esc(c.paymentDateLeft || "")}) pay in (cash or installment).`,
-    `The first side shall hand over the property to the second side after receiving all its financial dues on date ${esc(c.dateSurrender || "")}.`,
-    `In the event that the first side is late in handing over the property to the second side, it must pay an amount of ${amt(c.punishment)} as a fine for each day of delay.`,
-    `The first side shall liquidate the costs and fees of water and electricity or any other loan before the date of handing over the above mention property.`,
-    `For any reason for the retraction of one of the two sides, he must pay a penalty of amount ${amt(c.amountDissuade)}.`,
-    `The costs and fees of sale, transportation, sorting, consolidation, modification, and real estate tax are borne by the first side in accordance with the law if the property has a title deed. In the event that the property does not have a title deed, the first side must pay the costs of transferring ownership.`,
-    `The second side is responsible for paying the inspection and real estate registration fees according to the law if the property has a title deed, and if the property does not have a title deed, the both side must pay the registration costs.`,
-    `After signing this contract in the event that the sold property has a title deed, the first side must grant an agency to attorney (${esc(c.lawyerName || "")}) for the purpose of transferring ownership and registering the sold property for the benefit of the second party.`,
-    `The first side and the second side undertakes to pay 1% of the price of the property mentioned in this contract to the ${esc(office)} for the sale of the property.`,
-    `In the event of any dispute about the content of this contract, the two parties must resolve it through dialogue, otherwise the ${esc(city)} court will be the place to decide the cases.`,
-    `The first side and the second side, after signing the contract, are not entitled to claim the commission given to the ${esc(office)}.`,
-    `The company's job is only mediation. It is not responsible for any problem or dispute that occurs between the seller and the buyer.`,
-  ];
-  const html = `
-    <div class="doc doc-en">
-      ${contractLetterhead()}
-      <div class="en-top">
-        <div class="en-date">DATE : ${esc(dateTop)}</div>
-        <div class="en-title">(BUY AND SALE CONTRACT)</div>
-        <div class="en-num">CONTRACT NUMBER #&nbsp; ${esc(num)}</div>
-      </div>
-      <div class="en-parties">
-        <div class="en-col">
-          <div><span class="en-lbl">First Party:</span> ${esc(c.firstParty || "")}</div>
-          <div><span class="en-lbl">Location:</span> ${esc(c.location || "")}</div>
-          <div><span class="en-lbl">Number:</span> ${esc(c.propNo || "")}</div>
-        </div>
-        <div class="en-col">
-          <div><span class="en-lbl">Second Party:</span> ${esc(c.secondParty || "")}</div>
-          <div><span class="en-lbl">property:</span> ${esc(ptypeEN)}</div>
-          <div><span class="en-lbl">Area:</span> ${esc(c.area || "")} m²</div>
-        </div>
-      </div>
-      ${contractPhotosHtml(c)}
-      <div class="en-banner">Both parties agreed on these terms</div>
-      <ol class="en-clauses">${clauses.map((cl) => `<li>${cl}</li>`).join("")}</ol>
-      <div class="en-note"><b>Note :</b> ${esc(c.note || "")}</div>
-      <div class="en-signs">
-        <div class="en-sign"><div class="en-slabel">First Party (Seller)</div><div class="en-sline"></div><div class="en-sname">${esc(c.firstParty || "")}</div></div>
-        <div class="en-sign"><div class="en-slabel">Contract Organizor</div><div class="en-sline"></div><div class="en-sname">${esc(c.organizer || "")}</div></div>
-        <div class="en-sign"><div class="en-slabel">Second Party (Buyer)</div><div class="en-sline"></div><div class="en-sname">${esc(c.secondParty || "")}</div></div>
-      </div>
-      ${contractFooter()}
-    </div>`;
-  printHTML(html);
-}
-
-// Rent contract — matches the user's GRAND VIEW "(RENT CONTRACT)" template (18 clauses).
-function printContractRentEN(c) {
-  const s = store.settings();
-  const amt = (n) => amountPhraseW(n, c.currency);
-  const num = String(c.code || "").replace(/\D/g, "").replace(/^0+/, "") || String(c.code || "");
-  const dateTop = c.dateOf || String(c.createdAt || "").slice(0, 10) || today();
-  const ptypeEN = PTYPE_EN[c.ptype] || (c.ptype || "");
-  const clauses = [
-    `The first side accepts to rent the above mentioned property to the second side.`,
-    `The contract period is (${esc(c.rentalPeriod || "")})months, start from (${esc(c.dateOf || "")}) till (${esc(c.forDate || "")}) , and After the end of the contract, the second party must vacate the property without prior notification.`,
-    `both side agreed to the rent amount on an amount of ${amt(c.amount)}`,
-    `The second side pays an amount of ${amt(c.moneyAdvance)}. as an advance of (${esc(c.monthlyAdvance || "")}) months.`,
-    `The second side is obligated to pay an amount of ${amt(c.assurances)}.as insurance to the ${esc(BRAND.en())} according to the numbered receipt paper, and the amount is delivered on the same receipt paper to the second side after the end of the contract period, provided that the property is delivered without any deficiency by the second side to the first side.`,
-    `The second side uses this property for a (${esc(c.forPurposes || "")}) purpose, and when using it for any other purpose, should be inform the ${esc(BRAND.en())} with the written consent of the first side. Otherwise, the first side has the right to void the contract without informing the second side.`,
-    `The second side undertakes to protect the leased property from benefiting from it and to preserve it from damage and demolition and not to use it in an unwanted manner.`,
-    `From the date of signing the contract, the second side is responsible for paying the costs of water, electricity, the municipality and any other service.`,
-    `The second side undertakes to pay the rent at the time specified in the contract. If he is more than (7) days late, he will deal with him according to Paragraph (1) of Article (17) of the Real Estate Rental Law of Iraqi Law No. (87) for the year (1979), which is vacating the property while bearing the costs of notifying the court along with the monthly rent.`,
-    `If the leased property is furnished, the second party must preserve the furniture and, when vacating it, hand it over as it was; Otherwise, the second side shall be responsible for repairing or replacing it at its own risk.`,
-    `After the end of the contract period, in the event that the second side does not abide by vacating the property or renewing the contract, the property rent will be ${amt(c.punishPerDay)}per day until the case is resolved.`,
-    `If ownership of the property is transferred to another side, the new owner must abide by the content of this contract.`,
-    `The two sides must pay half of the amount of the rent annually to ${esc(BRAND.en())} instead of organizing this contract.`,
-    `Upon vacating the property, the second side must hand over the property as it received it without any defects. Otherwise, it bears the responsibility to fill the deficiencies as soon as possible.`,
-    `Upon renewal of the contract, the two parties undertake to pay half the amount of the rent annually to the ${esc(BRAND.en())}.`,
-    `The second side is not entitled in any way or creates problems with neighbors, otherwise he bears responsibility and the contract is terminated.`,
-    `When the problems are not resolved through dialogue between the two parties, the ${esc(BRAND.en())} does not bear the responsibility, but the two sides must resolve the issues through legal procedures and resort to a ${esc(BRAND.logoTop())} court.`,
-    `${esc(BRAND.en())} is not responsible for any problems that occur between the two sides.`,
-  ];
-  const html = `
-    <div class="doc doc-en">
-      ${contractLetterhead()}
-      <div class="en-top">
-        <div class="en-date">DATE : ${esc(dateTop)}</div>
-        <div class="en-title">(RENT CONTRACT)</div>
-        <div class="en-num">CONTRACT NUMBER #&nbsp; ${esc(num)}</div>
-      </div>
-      <div class="en-parties">
-        <div class="en-col">
-          <div><span class="en-lbl">First Side:</span> ${esc(c.firstParty || "")}</div>
-          <div><span class="en-lbl">Location:</span> ${esc(c.location || "")}</div>
-          <div><span class="en-lbl">Number of Property:</span> ${esc(c.propNo || "")}</div>
-        </div>
-        <div class="en-col">
-          <div><span class="en-lbl">Second Side:</span> ${esc(c.secondParty || "")}</div>
-          <div><span class="en-lbl">Type of property:</span> ${esc(ptypeEN)}</div>
-          <div><span class="en-lbl">Area:</span> ${esc(c.area || "")} m²</div>
-        </div>
-      </div>
-      ${contractPhotosHtml(c)}
-      <div class="en-banner">Both parties agreed on these terms</div>
-      <ol class="en-clauses">${clauses.map((cl) => `<li>${cl}</li>`).join("")}</ol>
-      <div class="en-note"><b>Note :</b> ${esc(c.note || "")}</div>
-      <div class="en-signs">
-        <div class="en-sign"><div class="en-slabel">First side (property owner)</div><div class="en-sline"></div><div class="en-sname">${esc(c.firstParty || "")}</div></div>
-        <div class="en-sign"><div class="en-slabel">Contract Organizer</div><div class="en-sline"></div><div class="en-sname">${esc(c.organizer || "")}</div></div>
-        <div class="en-sign"><div class="en-slabel">Second side (tenant)</div><div class="en-sline"></div><div class="en-sname">${esc(c.secondParty || "")}</div></div>
-      </div>
-      ${contractFooter()}
-    </div>`;
-  printHTML(html);
-}
-
+// Printed contract — renders in the current UI language (Kurdish / Arabic /
+// English) via CONTRACT_TEXT. Company name & court come from Settings
+// (blank/generic when unset — no hardcoded branding).
 function printContract(c) {
-  return c.ctype === "sale" ? printContractSaleEN(c) : printContractRentEN(c);
-}
-
-function printContractRentBullets_UNUSED(c) {
-  const lang = CURRENT_LANG;
-  const s = store.settings();
-  const clauses = CONTRACT_CLAUSES[c.ctype][lang] || CONTRACT_CLAUSES[c.ctype].ar;
-  const L = (k) => tLang(lang, k);
-  const office = s.office_name || L("app_title");
-  const heading = c.ctype === "sale" ? L("ct_sale_heading") : L("ct_rent_heading");
-
-  // Turn every entered field into a readable bullet. Labels follow print language.
-  const defs = contractFieldDefs(c.ctype);
-  const fmtVal = (f) => {
-    const v = c[f.name];
-    if (v === undefined || v === null || v === "") return null;
-    if (f.ptype) return tLang(lang, "pt_" + v);
-    if (f.money) return fmtMoney(v, c.currency);
-    return String(v);
-  };
-  const groups = [
-    { key: "parties", title: L("ct_parties") },
-    { key: "property", title: L("ct_property_details") },
-    { key: "financial", title: L("g_financial") },
-    { key: "dates", title: L("g_dates") },
-    { key: "other", title: L("g_other") },
-  ];
-  const SKIP = new Set(["status", "currency", "note"]); // shown elsewhere or not needed as a bullet
-  let bulletsHtml = "";
-  groups.forEach((g) => {
-    const items = defs
-      .filter((f) => f.group === g.key && !SKIP.has(f.name))
-      .map((f) => ({ label: f.label, val: fmtVal(f), money: f.money }))
-      .filter((x) => x.val !== null);
-    if (!items.length) return;
-    bulletsHtml += `<div class="sec-title">${g.title}</div><ul class="bullets">${items
-      .map((x) => `<li><b>${esc(x.label)}:</b> <span class="${x.money ? "price-hl" : ""}">${esc(x.val)}</span></li>`)
-      .join("")}</ul>`;
-  });
-
+  const lang = CURRENT_LANG === "ar" ? "ar" : (CURRENT_LANG === "ku" ? "ku" : "en");
+  const isSale = c.ctype === "sale";
+  const T = CONTRACT_TEXT.labels[lang];
+  const office = esc(BRAND.ar() || BRAND.en() || CONTRACT_TEXT.generic.office[lang]);
+  const court = esc((store.settings().court_city || "").trim() || CONTRACT_TEXT.generic.court[lang]);
+  const moneyFmt = lang === "en" ? (n) => amountPhrase(n, c.currency) : (n) => fmtMoney(Number(n) || 0, c.currency);
+  const x = { m: moneyFmt, office, court };
+  const clauses = CONTRACT_TEXT[isSale ? "sale" : "rent"][lang](c, x);
+  const num = String(c.code || "").replace(/\D/g, "").replace(/^0+/, "") || String(c.code || "");
+  const dateTop = isSale
+    ? (String(c.createdAt || "").slice(0, 10) || today())
+    : (c.dateOf || String(c.createdAt || "").slice(0, 10) || today());
+  const ptypeTxt = c.ptype ? tLang(lang, "pt_" + c.ptype) : "";
+  const signs = isSale
+    ? [[T.s_seller, c.firstParty], [T.s_organizer, c.organizer], [T.s_buyer, c.secondParty]]
+    : [[T.s_owner, c.firstParty], [T.s_organizer, c.organizer], [T.s_tenant, c.secondParty]];
+  const rtl = lang !== "en";
   const html = `
-    <div class="doc">
-      <div class="doc-header">
-        <div class="doc-office">${esc(office)}</div>
-        <div class="doc-sub">${esc(s.office_address || "")} ${s.office_phone ? " • " + esc(s.office_phone) : ""}</div>
+    <div class="doc doc-en${rtl ? " rtl" : ""}">
+      ${contractLetterhead()}
+      <div class="en-top">
+        <div class="en-date">${T.date} : <bdi>${esc(dateTop)}</bdi></div>
+        <div class="en-title">${T[isSale ? "saleTitle" : "rentTitle"]}</div>
+        <div class="en-num">${T.contractNo} #&nbsp; <bdi>${esc(num)}</bdi></div>
       </div>
-      <h2 class="doc-title">${heading}</h2>
-      <div class="doc-meta"><span>${L("f_code")}: <b>${esc(c.code)}</b></span></div>
-      ${bulletsHtml}
-      ${c.note ? `<div class="sec-title">${L("f_notes")}</div><ul class="bullets"><li>${esc(c.note)}</li></ul>` : ""}
-      <div class="sec-title">${L("ct_terms")}</div>
-      <ol class="clauses">${clauses.map((cl) => `<li>${esc(cl)}</li>`).join("")}</ol>
-      <div class="sec-title">${L("ct_signatures")}</div>
-      <div class="signs">
-        <div class="sign"><div>${L("ct_first_party")}</div><div class="line">${esc(c.firstParty || "")}</div></div>
-        <div class="sign"><div>${L("ct_witness")}</div><div class="line">.............</div></div>
-        <div class="sign"><div>${L("ct_second_party")}</div><div class="line">${esc(c.secondParty || "")}</div></div>
+      <div class="en-parties">
+        <div class="en-col">
+          <div><span class="en-lbl">${T.p_first}:</span> ${esc(c.firstParty || "")}</div>
+          <div><span class="en-lbl">${T.p_location}:</span> ${esc(c.location || "")}</div>
+          <div><span class="en-lbl">${T.p_number}:</span> ${esc(c.propNo || "")}</div>
+        </div>
+        <div class="en-col">
+          <div><span class="en-lbl">${T.p_second}:</span> ${esc(c.secondParty || "")}</div>
+          <div><span class="en-lbl">${T.p_type}:</span> ${esc(ptypeTxt)}</div>
+          <div><span class="en-lbl">${T.p_area}:</span> ${esc(c.area || "")} m²</div>
+        </div>
       </div>
+      ${contractPhotosHtml(c)}
+      <div class="en-banner">${T.banner}</div>
+      <ol class="en-clauses">${clauses.map((cl) => `<li>${cl}</li>`).join("")}</ol>
+      <div class="en-note"><b>${T.note} :</b> ${esc(c.note || "")}</div>
+      <div class="en-signs">
+        ${signs.map(([label, name]) => `<div class="en-sign"><div class="en-slabel">${label}</div><div class="en-sline"></div><div class="en-sname">${esc(name || "")}</div></div>`).join("")}
+      </div>
+      ${contractFooter()}
     </div>`;
   printHTML(html);
 }
@@ -1390,7 +1259,6 @@ function printReceipt(r) {
         ${r.ref ? `<tr><td>${L("f_ref")}</td><td><bdi>${esc(r.ref)}</bdi></td></tr>` : ""}
       </tbody></table>
       <div class="rcpt-amount-box"><span class="r-amount">${fmtMoney(r.amount, r.currency)}</span></div>
-      <div class="rcpt-words">${L("rc_words")}: <bdi dir="ltr">${esc(amountPhraseW(r.amount, r.currency))}</bdi></div>
       <div class="en-signs">
         <div class="en-sign"><div class="en-slabel">${L("rc_recipient")}</div><div class="en-sline"></div></div>
         <div class="en-sign"><div class="en-slabel">${L("rc_payer")}</div><div class="en-sline"></div></div>
