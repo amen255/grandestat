@@ -21,3 +21,6 @@ Thumbs.db
 # Logs / temp
 *.log
 *.tmp
+
+# Tunnel binary (large, downloaded locally)
+tools/
